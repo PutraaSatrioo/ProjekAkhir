@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>XR Budaya Indonesia - Catch Scanner</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        
+        body {
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        /* Kamera Fullscreen */
+        
+        #camera-feed {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+        /* Overlay UI */
+        
+        .ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            pointer-events: none;
+        }
+        
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            pointer-events: auto;
+        }
+        
+        .top-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .badge {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(8px);
+            padding: 8px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .btn-settings {
+            background: rgba(30, 41, 59, 0.85);
+            color: #f8fafc;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .btn-collection {
+            background: #f59e0b;
+            color: #000;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        /* Bidikan Tengah (Reticle) */
+        
+        .scanner-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .reticle {
+            width: 220px;
+            height: 220px;
+            border: 2px dashed rgba(251, 191, 36, 0.8);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 30px rgba(251, 191, 36, 0.25);
+            animation: pulse 2s infinite;
+        }
+        
+        .reticle-inner {
+            width: 12px;
+            height: 12px;
+            background: #fbbf24;
+            border-radius: 50%;
+        }
+        
+        .target-label {
+            margin-top: 14px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            color: #fde68a;
+            text-align: center;
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(0.96);
+                opacity: 0.8;
+            }
+            50% {
+                transform: scale(1.03);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(0.96);
+                opacity: 0.8;
+            }
+        }
+        /* Tombol Tangkap Bawah */
+        
+        .bottom-bar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            pointer-events: auto;
+            margin-bottom: 15px;
+        }
+        
+        #catch-btn {
+            width: 82px;
+            height: 82px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #fbbf24 0%, #d97706 100%);
+            border: 5px solid #fff;
+            color: #000;
+            font-weight: 800;
+            font-size: 13px;
+            box-shadow: 0 0 25px rgba(245, 158, 11, 0.8);
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+        
+        #catch-btn:active {
+            transform: scale(0.9);
+        }
+        
+        #catch-btn:disabled {
+            background: #475569;
+            border-color: #94a3b8;
+            color: #cbd5e1;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+        /* Modal Umum */
+        
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(9, 13, 22, 0.94);
+            z-index: 10;
+            display: none;
+            flex-direction: column;
+            padding: 24px;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 12px;
+        }
+        
+        .card-item {
+            background: #1e293b;
+            border: 1px solid #f59e0b;
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        
+        .card-item h3 {
+            color: #fbbf24;
+            margin-bottom: 4px;
+        }
+        
+        .card-item p {
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+        /* Form Kredensial */
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: #cbd5e1;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #475569;
+            background: #1e293b;
+            color: #fff;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #f59e0b;
+        }
+        
+        .btn-save {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: none;
+            background: #10b981;
+            color: #000;
+            font-weight: 800;
+            font-size: 15px;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+        
+        .hint-text {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 12px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+
+<body>
+
+    <video id="camera-feed" autoplay playsinline></video>
+
+    <div class="ui-layer">
+        <div class="top-bar">
+            <div class="top-left">
+                <button class="btn-settings" onclick="toggleSettings(true)">Kredensial</button>
+                <div class="badge" id="status-badge">Menunggu URL...</div>
+            </div>
+            <button class="btn-collection" onclick="toggleCollection(true)">Koleksi (<span id="count">0</span>)</button>
+        </div>
+
+        <div class="scanner-container">
+            <div class="reticle">
+                <div class="reticle-inner"></div>
+            </div>
+            <div class="target-label" id="target-text">Atur kredensial Supabase terlebih dahulu</div>
+        </div>
+
+        <div class="bottom-bar">
+            <button id="catch-btn" onclick="catchFauna()" disabled>TANGKAP</button>
+        </div>
+    </div>
+
+    <!-- Modal Pengaturan Kredensial Supabase -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-header">
+            <h2>Kredensial Supabase</h2>
+            <button class="btn-settings" onclick="toggleSettings(false)">Tutup</button>
+        </div>
+
+        <div class="form-group">
+            <label for="input-url">Supabase Project URL</label>
+            <input type="url" id="input-url" placeholder="https://xxxxxxxxxxxx.supabase.co" />
+        </div>
+
+        <div class="form-group">
+            <label for="input-key">Publishable API Key</label>
+            <input type="text" id="input-key" placeholder="sb_publishable_..." />
+        </div>
+
+        <div class="form-group">
+            <label for="input-target">Target ID Fauna (Database)</label>
+            <input type="text" id="input-target" placeholder="harimau_sumatra" />
+        </div>
+
+        <button class="btn-save" onclick="saveCredentials()">Simpan & Hubungkan</button>
+        <p class="hint-text">
+            Kredensial disimpan langsung di memori browser perangkat ini. Ambil <b>Project URL</b> dari menu <i>Project Settings &rarr; Data API</i> di dashboard Supabase.
+        </p>
+    </div>
+
+    <!-- Modal Laci Koleksi HP -->
+    <div id="inventory-modal" class="modal-overlay">
+        <div class="modal-header">
+            <h2>Koleksi Fauna Nusantara</h2>
+            <button class="btn-collection" onclick="toggleCollection(false)">Tutup</button>
+        </div>
+        <div id="collection-list">
+            <p style="color: #94a3b8;">Belum ada fauna yang tertangkap.</p>
+        </div>
+    </div>
+
+    <script>
+        const DEFAULT_KEY = 'sb_publishable_CRMI4bAg4seaGDWpY-CfEw_pqKDzO1z';
+        const DEFAULT_TARGET = 'harimau_sumatra';
+
+        let db = null;
+        let myCollection = [];
+        let currentTargetId = localStorage.getItem('xr_target_id') || DEFAULT_TARGET;
+
+        // 1. Nyalakan Kamera Belakang HP
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment'
+                    },
+                    audio: false
+                });
+                document.getElementById('camera-feed').srcObject = stream;
+            } catch (err) {
+                alert('Gagal membuka kamera. Pastikan halaman dibuka melalui HTTPS.');
+                console.error(err);
+            }
+        }
+
+        // 2. Muat Kredensial dari LocalStorage
+        function loadCredentials() {
+            const savedUrl = localStorage.getItem('xr_supabase_url') || '';
+            const savedKey = localStorage.getItem('xr_supabase_key') || DEFAULT_KEY;
+            const savedTarget = localStorage.getItem('xr_target_id') || DEFAULT_TARGET;
+
+            document.getElementById('input-url').value = savedUrl;
+            document.getElementById('input-key').value = savedKey;
+            document.getElementById('input-target').value = savedTarget;
+
+            if (!savedUrl || !savedUrl.startsWith('https://')) {
+                toggleSettings(true);
+                return;
+            }
+
+            currentTargetId = savedTarget;
+            db = window.supabase.createClient(savedUrl, savedKey);
+            initRealtime();
+        }
+
+        function saveCredentials() {
+            const urlVal = document.getElementById('input-url').value.trim().replace(/\/$/, '');
+            const keyVal = document.getElementById('input-key').value.trim();
+            const targetVal = document.getElementById('input-target').value.trim() || DEFAULT_TARGET;
+
+            if (!urlVal.startsWith('https://')) {
+                alert('Masukkan Supabase Project URL yang valid (diawali https://)');
+                return;
+            }
+            if (!keyVal) {
+                alert('Publishable API Key tidak boleh kosong.');
+                return;
+            }
+
+            localStorage.setItem('xr_supabase_url', urlVal);
+            localStorage.setItem('xr_supabase_key', keyVal);
+            localStorage.setItem('xr_target_id', targetVal);
+
+            location.reload();
+        }
+
+        // 3. Cek Status Awal & Dengarkan Perubahan Realtime
+        async function initRealtime() {
+            const badge = document.getElementById('status-badge');
+            badge.innerText = 'Menghubungkan...';
+
+            const {
+                data,
+                error
+            } = await db
+                .from('fauna_state')
+                .select('*')
+                .eq('id', currentTargetId)
+                .single();
+
+            if (error) {
+                badge.innerText = 'Koneksi Gagal';
+                document.getElementById('target-text').innerText = 'Cek URL / Nama Tabel di Kredensial';
+                console.error(error);
+                return;
+            }
+
+            if (data) updateUIState(data);
+
+            db.channel('fauna-updates')
+                .on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'fauna_state'
+                }, payload => {
+                    if (payload.new.id === currentTargetId) {
+                        updateUIState(payload.new);
+                    }
+                })
+                .subscribe();
+        }
+
+        function updateUIState(fauna) {
+            const btn = document.getElementById('catch-btn');
+            const badge = document.getElementById('status-badge');
+            const targetText = document.getElementById('target-text');
+
+            if (fauna.is_caught) {
+                btn.disabled = true;
+                btn.innerText = 'TERTANGKAP';
+                badge.innerText = 'Sudah Diambil';
+                targetText.innerText = `${fauna.name} telah masuk ke koleksimu!`;
+                addToCollection(fauna);
+            } else {
+                btn.disabled = false;
+                btn.innerText = 'TANGKAP';
+                badge.innerText = 'Aktif: ' + fauna.island;
+                targetText.innerText = `Arahkan ke ${fauna.name}`;
+            }
+        }
+
+        // 4. Kirim Perintah Tangkap ke Supabase
+        async function catchFauna() {
+            if (!db) return;
+            const btn = document.getElementById('catch-btn');
+            btn.disabled = true;
+            btn.innerText = '...';
+
+            const {
+                error
+            } = await db
+                .from('fauna_state')
+                .update({
+                    is_caught: true,
+                    caught_at: new Date().toISOString()
+                })
+                .eq('id', currentTargetId);
+
+            if (error) {
+                alert('Gagal menangkap: ' + error.message);
+                btn.disabled = false;
+                btn.innerText = 'TANGKAP';
+            } else if (navigator.vibrate) {
+                navigator.vibrate([100, 50, 200]);
+            }
+        }
+
+        function addToCollection(fauna) {
+            if (!myCollection.some(item => item.id === fauna.id)) {
+                myCollection.push(fauna);
+                renderCollection();
+            }
+        }
+
+        function renderCollection() {
+            document.getElementById('count').innerText = myCollection.length;
+            const listEl = document.getElementById('collection-list');
+            listEl.innerHTML = myCollection.map(item => `
+        <div class="card-item">
+          <h3>${item.name}</h3>
+          <p>Asal Wilayah: Pulau ${item.island}</p>
+        </div>
+      `).join('');
+        }
+
+        function toggleSettings(show) {
+            document.getElementById('settings-modal').style.display = show ? 'flex' : 'none';
+        }
+
+        function toggleCollection(show) {
+            document.getElementById('inventory-modal').style.display = show ? 'flex' : 'none';
+        }
+
+        startCamera();
+        loadCredentials();
+    </script>
+</body>
+
+</html>
